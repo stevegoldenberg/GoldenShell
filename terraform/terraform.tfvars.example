@@ -1,0 +1,38 @@
+# GoldenShell Terraform Variables Example
+#
+# Copy this file to terraform.tfvars and fill in your values:
+# cp terraform.tfvars.example terraform.tfvars
+
+# AWS Configuration
+aws_region = "us-east-1"  # Change to your preferred AWS region
+vpc_id     = "vpc-0d2b0e60ad84d7b95"  # REQUIRED: Your VPC ID (use an existing VPC or leave empty for default)
+subnet_id  = "subnet-0c7a7bc337b97485c"  # REQUIRED: Your subnet ID (must be in the specified VPC)
+
+# Instance Configuration
+instance_type = "t3.medium"  # Options: t3.small, t3.medium, t3.large, etc.
+instance_name = "goldenshell-dev"
+key_name      = "your-aws-key-pair-name"  # REQUIRED: Your AWS SSH key pair name
+
+# Tailscale Configuration
+# Get your auth key from: https://login.tailscale.com/admin/settings/keys
+tailscale_auth_key = "tskey-auth-xxxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # REQUIRED
+
+# Auto-Shutdown Configuration
+auto_shutdown_minutes = 30  # Minutes of inactivity before auto-shutdown
+
+# Storage Configuration
+ebs_volume_size = 30  # Size in GB (default: 30)
+
+# Backup Configuration
+enable_backups         = true  # Enable automated daily EBS snapshots
+backup_retention_days  = 7     # Number of days to retain snapshots
+
+# Cost Monitoring
+monthly_budget_limit   = 50                        # Monthly budget limit in USD
+budget_email_addresses = ["your-email@example.com"]  # Email addresses for budget alerts
+
+# CloudWatch Alarms (optional)
+# To receive alarm notifications, create an SNS topic and subscribe your email:
+# aws sns create-topic --name goldenshell-alarms
+# aws sns subscribe --topic-arn arn:aws:sns:REGION:ACCOUNT:goldenshell-alarms --protocol email --notification-endpoint your-email@example.com
+# alarm_sns_topic_arn = "arn:aws:sns:us-east-1:123456789012:goldenshell-alarms"

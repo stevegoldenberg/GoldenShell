@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(aws ec2 create-default-vpc:*)",
+      "Bash(aws ec2 describe-vpcs:*)",
+      "Bash(terraform apply:*)",
+      "Bash(terraform state:*)",
+      "Bash(aws ec2:*)",
+      "Read(//Users/steve/**)",
+      "WebSearch",
+      "Bash(terraform show:*)",
+      "Bash(git checkout:*)",
+      "Bash(aws ssm start-session:*)",
+      "Bash(aws iam attach-role-policy:*)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

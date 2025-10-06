@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(aws sts:*)",
+      "Bash(aws ec2 describe-regions:*)",
+      "Bash(aws ec2 describe-instances:*)",
+      "Bash(aws s3:*)",
+      "Bash(aws lambda list-functions:*)",
+      "Bash(aws rds describe-db-instances:*)",
+      "Bash(aws ecs list-clusters:*)",
+      "Read(//Users/steve/Code/GoldenShell/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

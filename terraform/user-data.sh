@@ -33,7 +33,9 @@ apt-get install -y \
     jq \
     python3 \
     python3-pip \
-    nginx
+    nginx \
+    nodejs \
+    npm
 
 # Install GitHub CLI
 if ! command -v gh &> /dev/null; then
@@ -48,27 +50,13 @@ else
     echo "GitHub CLI already installed: $(gh --version)"
 fi
 
-# Install Claude Code CLI (official installation)
+# Install Claude Code CLI via npm (official package)
 if ! command -v claude &> /dev/null; then
     echo "Installing Claude Code CLI..."
-    # Run installation as ubuntu user to install in their home directory
-    sudo -u ubuntu bash << 'CLAUDE_INSTALL'
-    cd ~
-    curl -fsSL https://claude.ai/install.sh | sh || echo "Claude CLI installation attempted"
-    # Add to PATH if installed
-    if [ -f "$HOME/.claude/bin/claude" ]; then
-        echo 'export PATH="$HOME/.claude/bin:$PATH"' >> ~/.bashrc
-    fi
-CLAUDE_INSTALL
-
-    # Also try to make it available system-wide
-    if [ -f /home/ubuntu/.claude/bin/claude ]; then
-        ln -sf /home/ubuntu/.claude/bin/claude /usr/local/bin/claude || true
-    fi
-
-    echo "Claude Code CLI installation attempted"
+    npm install -g @anthropic-ai/claude-code
+    echo "Claude Code CLI installed: $(claude --version)"
 else
-    echo "Claude Code CLI already installed"
+    echo "Claude Code CLI already installed: $(claude --version)"
 fi
 
 # Install Tailscale

@@ -132,6 +132,74 @@ Each tab maintains its own independent Claude Code session!
 - Copy/paste works using native iOS/Android gestures
 - Pinch-to-zoom if text is too small
 
+## Installing Additional Software
+
+### Package Management
+
+GoldenShell runs Ubuntu 22.04, which uses APT (Advanced Package Tool) for software installation. Homebrew is NOT available on Ubuntu.
+
+#### Quick Start: Installing Software
+
+```bash
+# Update package lists first
+sudo apt update
+
+# Install a package
+sudo apt install <package-name>
+
+# Example: Install htop (system monitor)
+sudo apt install -y htop
+
+# Search for packages
+apt search <keyword>
+```
+
+#### Pre-Installed Tools
+
+GoldenShell comes with these tools ready to use:
+- **Claude Code CLI**: `claude --version`
+- **GitHub CLI**: `gh --version`
+- **Node.js & npm**: `node --version`, `npm --version`
+- **Python & pip**: `python3 --version`, `pip3 --version`
+- **Git**: `git --version`
+- **AWS CLI**: `aws --version`
+- **Zellij**: `zellij --version`
+
+#### Installing Common Development Tools
+
+```bash
+# Update package lists
+sudo apt update
+
+# Modern CLI tools
+sudo apt install -y bat exa fd-find ripgrep fzf jq httpie
+
+# Code editors
+sudo apt install -y vim neovim
+
+# Docker
+sudo apt install -y docker.io
+sudo usermod -aG docker $USER
+
+# Database clients
+sudo apt install -y postgresql-client mysql-client redis-tools
+
+# Language-specific tools
+pip3 install --user <python-package>
+npm install -g <node-package>
+```
+
+#### For Complete Installation Guide
+
+See [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md) for:
+- Detailed APT usage
+- Alternative package managers (Snap)
+- Language-specific package managers (pip, npm, cargo)
+- Docker installation
+- Cloud CLI tools
+- Database clients
+- Troubleshooting tips
+
 ## Advanced Features
 
 ### Running Background Processes

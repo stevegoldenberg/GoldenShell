@@ -35,7 +35,9 @@ apt-get install -y \
     python3-pip \
     nginx \
     nodejs \
-    npm
+    npm \
+    tmux \
+    mosh
 
 # Install GitHub CLI
 if ! command -v gh &> /dev/null; then
@@ -59,11 +61,69 @@ else
     echo "Claude Code CLI already installed: $(claude --version)"
 fi
 
+# Create Claude auto-update script
+cat > /usr/local/bin/update-claude.sh << 'EOF'
+#!/bin/bash
+# Auto-update Claude Code CLI
+
+echo "$(date): Checking for Claude Code CLI updates..."
+
+# Update Claude Code CLI globally
+npm update -g @anthropic-ai/claude-code
+
+echo "$(date): Claude Code CLI update check complete"
+EOF
+
+chmod +x /usr/local/bin/update-claude.sh
+
+# Create systemd service for Claude updates
+cat > /etc/systemd/system/claude-update.service << 'EOF'
+[Unit]
+Description=Claude Code CLI Auto-Update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update-claude.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create systemd timer for daily Claude updates
+cat > /etc/systemd/system/claude-update.timer << 'EOF'
+[Unit]
+Description=Daily Claude Code CLI Update Check
+
+[Timer]
+OnCalendar=daily
+OnBootSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# Enable and start the timer
+systemctl daemon-reload
+systemctl enable claude-update.timer
+systemctl start claude-update.timer
+
+echo "Claude auto-update configured (daily updates via systemd)"
+
 # Install Tailscale
 if ! command -v tailscale &> /dev/null; then
     echo "Installing Tailscale..."
     curl -fsSL https://tailscale.com/install.sh | sh
 fi
+
+# Enable Tailscale service to start on boot
+echo "Enabling Tailscale service..."
+systemctl enable tailscaled
+systemctl start tailscaled
 
 # Configure Tailscale if not already connected
 if ! tailscale status &> /dev/null; then
@@ -277,6 +337,53 @@ cd ~
 # Configure git
 git config --global init.defaultBranch main
 
+# Configure tmux
+cat > ~/.tmux.conf << 'TMUXCONF'
+# Tmux configuration for GoldenShell
+
+# Set prefix to Ctrl-a (easier to reach than Ctrl-b)
+unbind C-b
+set -g prefix C-a
+bind C-a send-prefix
+
+# Enable mouse support
+set -g mouse on
+
+# Increase scrollback buffer
+set -g history-limit 10000
+
+# Start windows and panes at 1, not 0
+set -g base-index 1
+setw -g pane-base-index 1
+
+# Renumber windows when one is closed
+set -g renumber-windows on
+
+# Enable 256 colors
+set -g default-terminal "screen-256color"
+
+# Split panes using | and -
+bind | split-window -h
+bind - split-window -v
+unbind '"'
+unbind %
+
+# Reload config with r
+bind r source-file ~/.tmux.conf \; display "Config reloaded!"
+
+# Switch panes with Alt+arrow (no prefix needed)
+bind -n M-Left select-pane -L
+bind -n M-Right select-pane -R
+bind -n M-Up select-pane -U
+bind -n M-Down select-pane -D
+
+# Status bar styling
+set -g status-style bg=black,fg=white
+set -g status-left-length 40
+set -g status-left "#[fg=green]GoldenShell #[fg=yellow]#S "
+set -g status-right "#[fg=cyan]%d %b %R"
+TMUXCONF
+
 # Create a welcome message
 cat > ~/.bash_profile << 'WELCOME'
 echo "================================================"
@@ -286,22 +393,36 @@ echo ""
 echo "Installed tools:"
 echo "  - Claude Code CLI: claude --version"
 echo "  - GitHub CLI: gh --version"
-echo "  - Zellij (terminal multiplexer): zellij --version"
+echo "  - tmux (persistent sessions): tmux --version"
+echo "  - mosh (mobile shell): mosh --version"
+echo "  - Zellij (web terminal): zellij --version"
 echo "  - Tailscale: tailscale status"
 echo "  - AWS CLI: aws --version"
+echo ""
+echo "Persistent Sessions with tmux:"
+echo "  - Start session: tmux"
+echo "  - Detach (keep running): Ctrl+a, then d"
+echo "  - List sessions: tmux ls"
+echo "  - Reattach: tmux attach"
+echo "  - Split horizontal: Ctrl+a, then |"
+echo "  - Split vertical: Ctrl+a, then -"
+echo ""
+echo "Connect with mosh (survives network drops):"
+echo "  - mosh ubuntu@<tailscale-hostname>"
 echo ""
 echo "Web Terminal Access:"
 echo "  - Access via browser: http://YOUR_INSTANCE_IP:7681"
 echo "  - Username: ubuntu"
 echo "  - Password: GoldenShell2025!"
 echo ""
-echo "Zellij Commands:"
-echo "  - New tab: Ctrl+t"
-echo "  - Close tab: Ctrl+w"
-echo "  - Switch tab: Alt+1, Alt+2, etc."
-echo "  - New pane: Ctrl+n"
-echo ""
 echo "Auto-shutdown: This instance will shut down after ${auto_shutdown_minutes} minutes of inactivity"
+echo ""
+echo "Auto-Shutdown Management:"
+echo "  - Check status: systemctl status goldenshell-idle-monitor.timer"
+echo "  - View logs: sudo journalctl -u goldenshell-idle-monitor.service -f"
+echo "  - Disable: sudo systemctl stop goldenshell-idle-monitor.timer"
+echo "  - Enable: sudo systemctl start goldenshell-idle-monitor.timer"
+echo "  - Check last activity: cat /tmp/last-activity"
 echo "================================================"
 WELCOME
 

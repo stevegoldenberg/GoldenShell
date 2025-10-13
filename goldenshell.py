@@ -165,7 +165,7 @@ def deploy(instance_type):
 
 @cli.command()
 def status():
-    """Check if environment is running"""
+    """Check instance status and connection details"""
     config = Config()
 
     deployment = config.get('last_deployment')
@@ -189,11 +189,19 @@ def status():
         if response['Reservations']:
             instance = response['Reservations'][0]['Instances'][0]
             state = instance['State']['Name']
+            state_color = 'green' if state == 'running' else 'yellow' if state == 'stopped' else 'red'
 
             click.echo(click.style(f'Instance Status:', fg='cyan', bold=True))
             click.echo(f"Instance ID: {instance_id}")
-            click.echo(f"State: {state}")
+            click.echo(f"State: {click.style(state, fg=state_color)}")
+            click.echo(f"Instance Type: {instance.get('InstanceType', 'N/A')}")
             click.echo(f"Public IP: {instance.get('PublicIpAddress', 'N/A')}")
+
+            if state == 'running':
+                click.echo(f"\n{click.style('Connection Commands:', fg='cyan')}")
+                click.echo(f"  SSH (Tailscale): ssh ubuntu@<tailscale-hostname>")
+                click.echo(f"  Mosh (Tailscale): mosh ubuntu@<tailscale-hostname>")
+                click.echo(f"  Web Terminal: http://{instance.get('PublicIpAddress', 'N/A')}:7681")
         else:
             click.echo(click.style('Instance not found.', fg='yellow'))
 
@@ -202,8 +210,8 @@ def status():
 
 
 @cli.command()
-def connect():
-    """Get connection details for the environment"""
+def start():
+    """Start the instance"""
     config = Config()
 
     deployment = config.get('last_deployment')
@@ -211,12 +219,236 @@ def connect():
         click.echo(click.style('No active deployment found.', fg='yellow'))
         return
 
-    click.echo(click.style('Connection Details:', fg='cyan', bold=True))
-    click.echo(f"\nSSH (via public IP):")
-    click.echo(f"  ssh ubuntu@{deployment.get('public_ip')}")
-    click.echo(f"\nSSH (via Tailscale):")
-    click.echo(f"  Check your Tailscale admin panel for the hostname")
-    click.echo(f"  ssh ubuntu@<tailscale-hostname>")
+    instance_id = deployment.get('instance_id')
+    if not instance_id:
+        click.echo(click.style('No instance ID found.', fg='yellow'))
+        return
+
+    # Set AWS credentials
+    os.environ['AWS_ACCESS_KEY_ID'] = config.get('aws_access_key_id')
+    os.environ['AWS_SECRET_ACCESS_KEY'] = config.get('aws_secret_access_key')
+
+    try:
+        ec2 = boto3.client('ec2', region_name=config.get('aws_region'))
+
+        # Check current state
+        response = ec2.describe_instances(InstanceIds=[instance_id])
+        if response['Reservations']:
+            state = response['Reservations'][0]['Instances'][0]['State']['Name']
+
+            if state == 'running':
+                click.echo(click.style('Instance is already running!', fg='green'))
+                return
+            elif state == 'pending':
+                click.echo(click.style('Instance is already starting...', fg='yellow'))
+                return
+
+        click.echo('Starting instance...')
+        ec2.start_instances(InstanceIds=[instance_id])
+
+        click.echo(click.style('✓ Instance started successfully!', fg='green'))
+        click.echo('\nWait about 1-2 minutes for it to boot, then connect via:')
+        click.echo('  ssh ubuntu@<tailscale-hostname>')
+
+    except Exception as e:
+        click.echo(click.style(f'Error: {str(e)}', fg='red'))
+        sys.exit(1)
+
+
+@cli.command()
+def stop():
+    """Stop the instance"""
+    config = Config()
+
+    deployment = config.get('last_deployment')
+    if not deployment:
+        click.echo(click.style('No active deployment found.', fg='yellow'))
+        return
+
+    instance_id = deployment.get('instance_id')
+    if not instance_id:
+        click.echo(click.style('No instance ID found.', fg='yellow'))
+        return
+
+    # Set AWS credentials
+    os.environ['AWS_ACCESS_KEY_ID'] = config.get('aws_access_key_id')
+    os.environ['AWS_SECRET_ACCESS_KEY'] = config.get('aws_secret_access_key')
+
+    try:
+        ec2 = boto3.client('ec2', region_name=config.get('aws_region'))
+
+        # Check current state
+        response = ec2.describe_instances(InstanceIds=[instance_id])
+        if response['Reservations']:
+            state = response['Reservations'][0]['Instances'][0]['State']['Name']
+
+            if state == 'stopped':
+                click.echo(click.style('Instance is already stopped!', fg='yellow'))
+                return
+            elif state == 'stopping':
+                click.echo(click.style('Instance is already stopping...', fg='yellow'))
+                return
+
+        click.echo('Stopping instance...')
+        ec2.stop_instances(InstanceIds=[instance_id])
+
+        click.echo(click.style('✓ Instance stopped successfully!', fg='green'))
+
+    except Exception as e:
+        click.echo(click.style(f'Error: {str(e)}', fg='red'))
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--tailscale-hostname', help='Tailscale hostname of the instance')
+def ssh(tailscale_hostname):
+    """SSH into the instance via Tailscale"""
+    config = Config()
+
+    if not tailscale_hostname:
+        click.echo(click.style('Connection Options:', fg='cyan', bold=True))
+        click.echo("\nTo connect via Tailscale:")
+        click.echo("  1. Check your Tailscale admin panel for the hostname")
+        click.echo("  2. Run: ssh ubuntu@<tailscale-hostname>")
+        click.echo("\nTo connect via mosh (survives network drops):")
+        click.echo("  mosh ubuntu@<tailscale-hostname>")
+        click.echo("\nTo SSH with this command:")
+        click.echo("  goldenshell ssh --tailscale-hostname <hostname>")
+        return
+
+    # Execute SSH command
+    import subprocess
+    try:
+        subprocess.run(['ssh', f'ubuntu@{tailscale_hostname}'])
+    except FileNotFoundError:
+        click.echo(click.style('Error: ssh command not found. Please install OpenSSH.', fg='red'))
+    except Exception as e:
+        click.echo(click.style(f'Error: {str(e)}', fg='red'))
+
+
+@cli.command()
+def resize():
+    """Change the instance type (requires instance restart)"""
+    config = Config()
+
+    deployment = config.get('last_deployment')
+    if not deployment:
+        click.echo(click.style('No active deployment found.', fg='yellow'))
+        return
+
+    instance_id = deployment.get('instance_id')
+    if not instance_id:
+        click.echo(click.style('No instance ID found.', fg='yellow'))
+        return
+
+    # Set AWS credentials
+    os.environ['AWS_ACCESS_KEY_ID'] = config.get('aws_access_key_id')
+    os.environ['AWS_SECRET_ACCESS_KEY'] = config.get('aws_secret_access_key')
+    os.environ['AWS_DEFAULT_REGION'] = config.get('aws_region')
+
+    try:
+        ec2 = boto3.client('ec2', region_name=config.get('aws_region'))
+
+        # Get current instance type
+        response = ec2.describe_instances(InstanceIds=[instance_id])
+        if response['Reservations']:
+            instance = response['Reservations'][0]['Instances'][0]
+            current_type = instance.get('InstanceType', 'unknown')
+            current_state = instance['State']['Name']
+
+            click.echo(click.style('Instance Resize', fg='cyan', bold=True))
+            click.echo(f"\nCurrent instance type: {click.style(current_type, fg='green')}")
+            click.echo(f"Current state: {current_state}\n")
+
+            # Instance type options with descriptions
+            instance_types = {
+                '1': ('t3.micro', '2 vCPU, 1GB RAM - ~$7.50/month'),
+                '2': ('t3.small', '2 vCPU, 2GB RAM - ~$15/month'),
+                '3': ('t3.medium', '2 vCPU, 4GB RAM - ~$30/month (default)'),
+                '4': ('t3.large', '2 vCPU, 8GB RAM - ~$60/month'),
+                '5': ('t3.xlarge', '4 vCPU, 16GB RAM - ~$120/month'),
+                '6': ('t3.2xlarge', '8 vCPU, 32GB RAM - ~$240/month'),
+                '7': ('c6i.large', '2 vCPU, 4GB RAM - Compute optimized ~$60/month'),
+                '8': ('c6i.xlarge', '4 vCPU, 8GB RAM - Compute optimized ~$120/month'),
+            }
+
+            click.echo(click.style('Available instance types:', fg='cyan'))
+            for key, (itype, desc) in instance_types.items():
+                marker = '→' if itype == current_type else ' '
+                click.echo(f"  {marker} {key}. {itype:15} - {desc}")
+
+            click.echo()
+            choice = click.prompt('Select instance type (or press Enter to cancel)',
+                                default='', show_default=False)
+
+            if not choice or choice not in instance_types:
+                click.echo('Cancelled.')
+                return
+
+            new_type = instance_types[choice][0]
+
+            if new_type == current_type:
+                click.echo(click.style(f'Instance is already {current_type}', fg='yellow'))
+                return
+
+            # Confirm the change
+            click.echo(f"\nThis will change instance type from {current_type} to {new_type}")
+            if current_state == 'running':
+                click.echo(click.style('WARNING: Instance will be stopped and restarted!', fg='yellow'))
+
+            if not click.confirm('Continue?'):
+                click.echo('Cancelled.')
+                return
+
+            # Stop instance if running
+            if current_state == 'running':
+                click.echo('\nStopping instance...')
+                ec2.stop_instances(InstanceIds=[instance_id])
+
+                # Wait for instance to stop
+                waiter = ec2.get_waiter('instance_stopped')
+                click.echo('Waiting for instance to stop...')
+                waiter.wait(InstanceIds=[instance_id])
+
+            # Modify instance type
+            click.echo(f'Changing instance type to {new_type}...')
+            ec2.modify_instance_attribute(
+                InstanceId=instance_id,
+                InstanceType={'Value': new_type}
+            )
+
+            # Update Terraform tfvars file
+            tf_dir = Path(__file__).parent / 'terraform'
+            tfvars_file = tf_dir / 'terraform.tfvars'
+
+            if tfvars_file.exists():
+                click.echo('Updating terraform.tfvars...')
+                with open(tfvars_file, 'r') as f:
+                    content = f.read()
+
+                # Update instance_type line
+                import re
+                content = re.sub(
+                    r'instance_type\s*=\s*"[^"]*"',
+                    f'instance_type = "{new_type}"',
+                    content
+                )
+
+                with open(tfvars_file, 'w') as f:
+                    f.write(content)
+
+            click.echo(click.style(f'\n✓ Instance type changed to {new_type}', fg='green'))
+
+            # Ask if user wants to start the instance
+            if click.confirm('\nStart the instance now?', default=True):
+                click.echo('Starting instance...')
+                ec2.start_instances(InstanceIds=[instance_id])
+                click.echo(click.style('✓ Instance started!', fg='green'))
+                click.echo('Wait 1-2 minutes for it to boot, then connect via SSH.')
+
+    except Exception as e:
+        click.echo(click.style(f'Error: {str(e)}', fg='red'))
+        sys.exit(1)
 
 
 @cli.command()

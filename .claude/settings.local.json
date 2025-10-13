@@ -15,7 +15,11 @@
       "Bash(aws iam attach-role-policy:*)",
       "Bash(ssh:*)",
       "Bash(scp:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(terraform output:*)",
+      "Bash(aws ssm send-command:*)",
+      "Bash(aws ssm get-command-invocation:*)"
     ],
     "deny": [],
     "ask": []

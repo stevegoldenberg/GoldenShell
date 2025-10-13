@@ -68,6 +68,15 @@ resource "aws_security_group" "goldenshell" {
     description = "Tailscale"
   }
 
+  # Mosh UDP ports (for mobile shell connections)
+  ingress {
+    from_port   = 60000
+    to_port     = 61000
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Mosh (mobile shell)"
+  }
+
   # SSH access for emergency access (can be restricted to specific IPs via variable)
   ingress {
     from_port   = 22

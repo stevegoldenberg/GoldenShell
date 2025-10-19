@@ -20,7 +20,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get upgrade -y
 
-# Install basic dependencies
+# Install basic dependencies (excluding nodejs/npm - will be installed later)
 apt-get install -y \
     curl \
     wget \
@@ -34,10 +34,20 @@ apt-get install -y \
     python3 \
     python3-pip \
     nginx \
-    nodejs \
-    npm \
     tmux \
     mosh
+
+# Install AWS CLI first (needed for SSM parameter access)
+if ! command -v aws &> /dev/null; then
+    echo "Installing AWS CLI..."
+    curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+    unzip -q /tmp/awscliv2.zip -d /tmp
+    /tmp/aws/install
+    rm -rf /tmp/aws /tmp/awscliv2.zip
+    echo "AWS CLI installed: $(aws --version)"
+else
+    echo "AWS CLI already installed: $(aws --version)"
+fi
 
 # Install GitHub CLI
 if ! command -v gh &> /dev/null; then
@@ -52,13 +62,26 @@ else
     echo "GitHub CLI already installed: $(gh --version)"
 fi
 
+# Install Node.js v20 LTS (required for latest Claude Code CLI)
+echo "Installing Node.js v20 LTS..."
+# Remove any conflicting packages first to avoid installation failures
+apt-get remove -y libnode-dev nodejs npm 2>/dev/null || true
+# Install Node.js v20 from NodeSource
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+echo "Node.js installed: $(node --version)"
+echo "npm version: $(npm --version)"
+
 # Install Claude Code CLI via npm (official package)
 if ! command -v claude &> /dev/null; then
     echo "Installing Claude Code CLI..."
     npm install -g @anthropic-ai/claude-code
     echo "Claude Code CLI installed: $(claude --version)"
 else
-    echo "Claude Code CLI already installed: $(claude --version)"
+    echo "Reinstalling Claude Code CLI to ensure compatibility..."
+    npm uninstall -g @anthropic-ai/claude-code 2>/dev/null || true
+    npm install -g @anthropic-ai/claude-code
+    echo "Claude Code CLI installed: $(claude --version)"
 fi
 
 # Create Claude auto-update script
@@ -126,19 +149,19 @@ systemctl enable tailscaled
 systemctl start tailscaled
 
 # Configure Tailscale if not already connected
-if ! tailscale status &> /dev/null; then
+if ! sudo tailscale status &> /dev/null; then
     # Retrieve Tailscale auth key from SSM Parameter Store
     echo "Retrieving Tailscale auth key from SSM..."
+    export AWS_DEFAULT_REGION=${aws_region}
     TAILSCALE_AUTH_KEY=$(aws ssm get-parameter \
       --name "/goldenshell/tailscale-auth-key" \
       --with-decryption \
-      --region "${aws_region}" \
       --query "Parameter.Value" \
       --output text)
 
     # Start and authenticate Tailscale
-    echo "Configuring Tailscale..."
-    tailscale up --authkey="$TAILSCALE_AUTH_KEY" --ssh
+    echo "Authenticating Tailscale..."
+    sudo tailscale up --authkey="$TAILSCALE_AUTH_KEY" --ssh
 
     # Clear the auth key from memory
     unset TAILSCALE_AUTH_KEY
@@ -148,17 +171,8 @@ else
     echo "Tailscale already configured and connected"
 fi
 
-# Install AWS CLI (useful for auto-shutdown script)
-if ! command -v aws &> /dev/null; then
-    echo "Installing AWS CLI..."
-    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
-    unzip -q /tmp/awscliv2.zip -d /tmp
-    /tmp/aws/install
-    rm -rf /tmp/aws /tmp/awscliv2.zip
-    echo "AWS CLI installed: $(aws --version)"
-else
-    echo "AWS CLI already installed: $(aws --version)"
-fi
+# Display Tailscale status
+sudo tailscale status
 
 # Install Zellij (terminal multiplexer for web terminal)
 if ! command -v zellij &> /dev/null; then
@@ -267,9 +281,10 @@ INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.2
 # Check for active SSH sessions, running processes, and network activity
 ACTIVE_SESSIONS=$(who | wc -l)
 RECENT_CONNECTIONS=$(ss -tn | grep ESTAB | grep -v ':22' | wc -l)
+WEB_TERMINAL_CONNECTIONS=$(sudo ss -tn | grep ':7681' | grep ESTAB | wc -l)
 
 # If there are active sessions or connections, reset idle timer
-if [ "$ACTIVE_SESSIONS" -gt 0 ] || [ "$RECENT_CONNECTIONS" -gt 0 ]; then
+if [ "$ACTIVE_SESSIONS" -gt 0 ] || [ "$RECENT_CONNECTIONS" -gt 0 ] || [ "$WEB_TERMINAL_CONNECTIONS" -gt 0 ]; then
     echo "$(date): Active sessions detected. Not shutting down."
     echo "$(date)" > /tmp/last-activity
     exit 0
@@ -399,30 +414,13 @@ echo "  - Zellij (web terminal): zellij --version"
 echo "  - Tailscale: tailscale status"
 echo "  - AWS CLI: aws --version"
 echo ""
-echo "Persistent Sessions with tmux:"
-echo "  - Start session: tmux"
-echo "  - Detach (keep running): Ctrl+a, then d"
-echo "  - List sessions: tmux ls"
-echo "  - Reattach: tmux attach"
-echo "  - Split horizontal: Ctrl+a, then |"
-echo "  - Split vertical: Ctrl+a, then -"
-echo ""
-echo "Connect with mosh (survives network drops):"
-echo "  - mosh ubuntu@<tailscale-hostname>"
-echo ""
 echo "Web Terminal Access:"
-echo "  - Access via browser: http://YOUR_INSTANCE_IP:7681"
+PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+echo "  - Access via browser: http://$PUBLIC_IP:7681"
 echo "  - Username: ubuntu"
 echo "  - Password: GoldenShell2025!"
 echo ""
-echo "Auto-shutdown: This instance will shut down after ${auto_shutdown_minutes} minutes of inactivity"
-echo ""
-echo "Auto-Shutdown Management:"
-echo "  - Check status: systemctl status goldenshell-idle-monitor.timer"
-echo "  - View logs: sudo journalctl -u goldenshell-idle-monitor.service -f"
-echo "  - Disable: sudo systemctl stop goldenshell-idle-monitor.timer"
-echo "  - Enable: sudo systemctl start goldenshell-idle-monitor.timer"
-echo "  - Check last activity: cat /tmp/last-activity"
+echo "Auto-shutdown: This instance will shut down after 30 minutes of inactivity"
 echo "================================================"
 WELCOME
 

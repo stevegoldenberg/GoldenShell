@@ -60,10 +60,113 @@ class Config:
         return yaml.dump(display_config, default_flow_style=False)
 
 
-@click.group()
-def cli():
+def interactive_menu():
+    """Display interactive menu and handle user selection"""
+    while True:
+        # Clear screen (optional - comment out if not desired)
+        click.clear()
+
+        # Display header
+        click.echo(click.style('=' * 53, fg='cyan'))
+        click.echo(click.style('  GoldenShell - AWS Development Environment', fg='cyan', bold=True))
+        click.echo(click.style('=' * 53, fg='cyan'))
+        click.echo()
+
+        # Display menu options
+        menu_options = {
+            '1': ('Initialize configuration', 'init'),
+            '2': ('View configuration', 'config'),
+            '3': ('Deploy new instance', 'deploy'),
+            '4': ('Check instance status', 'status'),
+            '5': ('Start instance', 'start'),
+            '6': ('Stop instance', 'stop'),
+            '7': ('Resize instance', 'resize'),
+            '8': ('SSH to instance', 'ssh'),
+            '9': ('Destroy environment', 'destroy'),
+            '0': ('Exit', None),
+        }
+
+        for key in sorted(menu_options.keys()):
+            desc, _ = menu_options[key]
+            click.echo(f"  {key}. {desc}")
+
+        click.echo()
+        choice = click.prompt(click.style('Select an option', fg='yellow'),
+                             type=str, default='0', show_default=False)
+
+        if choice not in menu_options:
+            click.echo(click.style('\nInvalid option. Please try again.', fg='red'))
+            click.pause()
+            continue
+
+        _, command = menu_options[choice]
+
+        # Exit option
+        if command is None:
+            click.echo(click.style('\nGoodbye!', fg='green'))
+            sys.exit(0)
+
+        # Execute the selected command
+        click.echo()
+        click.echo(click.style(f'Executing: {command}', fg='cyan'))
+        click.echo(click.style('-' * 53, fg='cyan'))
+        click.echo()
+
+        try:
+            # Get the Click context and invoke the command
+            ctx = click.Context(cli)
+            ctx.invoked_subcommand = command
+
+            # Map command names to actual command functions
+            command_map = {
+                'init': init,
+                'config': config,
+                'status': status,
+                'start': start,
+                'stop': stop,
+                'resize': resize,
+                'ssh': ssh,
+                'deploy': deploy,
+                'destroy': destroy,
+            }
+
+            if command in command_map:
+                # Handle special cases for commands that need parameters
+                if command == 'deploy':
+                    instance_type = click.prompt(
+                        'Instance type',
+                        default='t3.medium',
+                        show_default=True
+                    )
+                    ctx.invoke(command_map[command], instance_type=instance_type)
+                elif command == 'ssh':
+                    # Explicitly pass None values to trigger interactive mode
+                    ctx.invoke(command_map[command], tailscale_hostname=None, use_public_ip=False)
+                else:
+                    ctx.invoke(command_map[command])
+
+        except SystemExit as e:
+            # Handle sys.exit() calls from commands
+            if e.code != 0:
+                click.echo(click.style(f'\nCommand exited with error code: {e.code}', fg='red'))
+        except Exception as e:
+            click.echo(click.style(f'\nError: {str(e)}', fg='red'))
+
+        # Ask if user wants to continue
+        click.echo()
+        click.echo(click.style('-' * 53, fg='cyan'))
+        if not click.confirm(click.style('\nPerform another action?', fg='yellow'), default=True):
+            click.echo(click.style('\nGoodbye!', fg='green'))
+            break
+
+
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
     """GoldenShell - Deploy ephemeral Linux development environments in AWS"""
-    pass
+    # If no subcommand was provided, show interactive menu
+    if ctx.invoked_subcommand is None:
+        interactive_menu()
 
 
 @cli.command()
@@ -301,25 +404,68 @@ def stop():
 
 @cli.command()
 @click.option('--tailscale-hostname', help='Tailscale hostname of the instance')
-def ssh(tailscale_hostname):
-    """SSH into the instance via Tailscale"""
-    config = Config()
+@click.option('--use-public-ip', is_flag=True, help='Use public IP instead of Tailscale')
+def ssh(tailscale_hostname, use_public_ip):
+    """SSH into the instance via Tailscale or public IP"""
+    import subprocess
 
-    if not tailscale_hostname:
-        click.echo(click.style('Connection Options:', fg='cyan', bold=True))
-        click.echo("\nTo connect via Tailscale:")
-        click.echo("  1. Check your Tailscale admin panel for the hostname")
-        click.echo("  2. Run: ssh ubuntu@<tailscale-hostname>")
-        click.echo("\nTo connect via mosh (survives network drops):")
-        click.echo("  mosh ubuntu@<tailscale-hostname>")
-        click.echo("\nTo SSH with this command:")
-        click.echo("  goldenshell ssh --tailscale-hostname <hostname>")
-        return
+    config = Config()
+    deployment = config.get('last_deployment')
+    public_ip = deployment.get('public_ip') if deployment else None
+
+    # If no hostname provided and not using public IP flag, show options
+    if not tailscale_hostname and not use_public_ip:
+        click.echo(click.style('SSH Connection Options:', fg='cyan', bold=True))
+        click.echo()
+
+        # Show public IP option if available
+        if public_ip:
+            click.echo(f"1. Connect via Public IP: {click.style(public_ip, fg='green')}")
+            click.echo(f"   Command: ssh -i ~/.ssh/{config.get('ssh_key_name', 'goldenshell-key')}.pem ubuntu@{public_ip}")
+        else:
+            click.echo("1. Public IP not available (instance may be stopped)")
+
+        click.echo()
+        click.echo("2. Connect via Tailscale:")
+        click.echo("   - Check your Tailscale admin panel for the hostname")
+        click.echo("   - Run: goldenshell ssh --tailscale-hostname <hostname>")
+        click.echo()
+
+        # Prompt user for choice
+        if public_ip:
+            choice = click.prompt(
+                'Select connection method',
+                type=click.Choice(['1', '2', 'cancel']),
+                default='1'
+            )
+
+            if choice == '1':
+                use_public_ip = True
+            elif choice == '2':
+                tailscale_hostname = click.prompt('Enter Tailscale hostname')
+            else:
+                click.echo('Cancelled.')
+                return
+        else:
+            click.echo(click.style('No public IP available. Please start the instance first.', fg='yellow'))
+            return
 
     # Execute SSH command
-    import subprocess
     try:
-        subprocess.run(['ssh', f'ubuntu@{tailscale_hostname}'])
+        if use_public_ip and public_ip:
+            # SSH via public IP
+            key_file = f"~/.ssh/{config.get('ssh_key_name', 'goldenshell-key')}.pem"
+            key_file_expanded = os.path.expanduser(key_file)
+
+            click.echo(f"Connecting to {public_ip} via SSH...")
+            subprocess.run(['ssh', '-i', key_file_expanded, f'ubuntu@{public_ip}'])
+        elif tailscale_hostname:
+            # SSH via Tailscale
+            click.echo(f"Connecting to {tailscale_hostname} via Tailscale SSH...")
+            subprocess.run(['ssh', f'ubuntu@{tailscale_hostname}'])
+        else:
+            click.echo(click.style('Error: No hostname or IP address provided.', fg='red'))
+
     except FileNotFoundError:
         click.echo(click.style('Error: ssh command not found. Please install OpenSSH.', fg='red'))
     except Exception as e:

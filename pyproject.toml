@@ -2,6 +2,7 @@
 name = "goldenshell"
 version = "0.1.0"
 description = "Add your description here"
+readme = "README.md"
 requires-python = ">=3.13.7"
 dependencies = [
     "boto3>=1.28.0",

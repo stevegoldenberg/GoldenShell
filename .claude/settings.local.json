@@ -19,7 +19,20 @@
       "Bash(git commit:*)",
       "Bash(terraform output:*)",
       "Bash(aws ssm send-command:*)",
-      "Bash(aws ssm get-command-invocation:*)"
+      "Bash(aws ssm get-command-invocation:*)",
+      "Bash(cat:*)",
+      "Bash(aws ssm describe-instance-information:*)",
+      "Bash(aws ssm get-parameter --name \"/goldenshell/tailscale-auth-key\" --with-decryption --query \"Parameter.Value\" --output text --region us-east-1)",
+      "Bash(terraform plan -out=tfplan)",
+      "Bash(python goldenshell.py status)",
+      "Bash(pip3 install -q -r requirements.txt)",
+      "Bash(python3 goldenshell.py status)",
+      "Bash(python3 -m py_compile goldenshell.py)",
+      "Bash(python3 goldenshell.py --help)",
+      "Bash(python3 -c \"import goldenshell; print(''Import successful!'')\")",
+      "Bash(curl -I http://107.20.48.61:7681 --connect-timeout 5)",
+      "Bash(find . -maxdepth 1 -type f ! -path \"./.git/*\" ! -path \"./.venv/*\" -exec ls -lh {})",
+      "Bash(awk '{print $9, \"\"\"\"(\"\"\"\" $5 \"\"\"\")\"\"\"\"}')"
     ],
     "deny": [],
     "ask": []

@@ -237,7 +237,17 @@ chown -R ubuntu:ubuntu /home/ubuntu/.config
 
 # Create ttyd systemd service
 echo "Creating ttyd systemd service..."
-cat > /etc/systemd/system/ttyd.service << 'EOF'
+
+# Retrieve web terminal password from SSM
+echo "Retrieving web terminal password from SSM..."
+export AWS_DEFAULT_REGION=${aws_region}
+TTYD_PASSWORD=$(aws ssm get-parameter \
+  --name "/goldenshell/ttyd-password" \
+  --with-decryption \
+  --query "Parameter.Value" \
+  --output text)
+
+cat > /etc/systemd/system/ttyd.service << EOF
 [Unit]
 Description=ttyd - Web Terminal with Zellij for GoldenShell
 After=network.target
@@ -246,16 +256,18 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu
-# Run ttyd on port 7681 with basic auth
-# Username: ubuntu, Password: GoldenShell2025!
+# Run ttyd on port 7681 with basic auth (password stored in SSM)
 # -W = writable terminal, -t = client options
-ExecStart=/usr/local/bin/ttyd -p 7681 -W -t disableReconnect=true -c ubuntu:GoldenShell2025! /usr/local/bin/zellij attach --create default
+ExecStart=/usr/local/bin/ttyd -p 7681 -W -t disableReconnect=true -c ubuntu:$TTYD_PASSWORD /usr/local/bin/zellij attach --create default
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Clear the password from memory
+unset TTYD_PASSWORD
 
 # Enable and start ttyd service
 systemctl daemon-reload
@@ -418,7 +430,7 @@ echo "Web Terminal Access:"
 PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
 echo "  - Access via browser: http://$PUBLIC_IP:7681"
 echo "  - Username: ubuntu"
-echo "  - Password: GoldenShell2025!"
+echo "  - Password: Retrieve with 'goldenshell.py connect' or from SSM Parameter Store"
 echo ""
 echo "Auto-shutdown: This instance will shut down after 30 minutes of inactivity"
 echo "================================================"
@@ -438,4 +450,4 @@ echo "Setup completion flag created at: $SETUP_COMPLETE_FLAG"
 echo ""
 echo "Web Terminal URL: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):7681"
 echo "Username: ubuntu"
-echo "Password: GoldenShell2025!"
+echo "Password: Retrieve from SSM Parameter Store: /goldenshell/ttyd-password"

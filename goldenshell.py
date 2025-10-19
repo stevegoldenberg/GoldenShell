@@ -36,6 +36,8 @@ class Config:
         self.config_dir.mkdir(parents=True, exist_ok=True)
         with open(self.config_file, 'w') as f:
             yaml.dump(self.config, f, default_flow_style=False)
+        # Set secure permissions (owner read/write only)
+        os.chmod(self.config_file, 0o600)
 
     def get(self, key, default=None):
         """Get configuration value"""
@@ -305,6 +307,21 @@ def status():
                 click.echo(f"  SSH (Tailscale): ssh ubuntu@<tailscale-hostname>")
                 click.echo(f"  Mosh (Tailscale): mosh ubuntu@<tailscale-hostname>")
                 click.echo(f"  Web Terminal: http://{instance.get('PublicIpAddress', 'N/A')}:7681")
+
+                # Retrieve web terminal password from SSM
+                try:
+                    ssm = boto3.client('ssm', region_name=config.get('aws_region'))
+                    password_response = ssm.get_parameter(
+                        Name='/goldenshell/ttyd-password',
+                        WithDecryption=True
+                    )
+                    password = password_response['Parameter']['Value']
+                    click.echo(f"\n{click.style('Web Terminal Credentials:', fg='cyan')}")
+                    click.echo(f"  Username: ubuntu")
+                    click.echo(f"  Password: {password}")
+                except Exception as e:
+                    click.echo(f"\n{click.style('Note:', fg='yellow')} Could not retrieve web terminal password: {str(e)}")
+                    click.echo(f"  Retrieve manually with: aws ssm get-parameter --name /goldenshell/ttyd-password --with-decryption --query Parameter.Value --output text --region {config.get('aws_region')}")
         else:
             click.echo(click.style('Instance not found.', fg='yellow'))
 

@@ -52,3 +52,13 @@ output "backup_policy_id" {
   description = "DLM backup policy ID (if backups enabled)"
   value       = var.enable_backups ? aws_dlm_lifecycle_policy.goldenshell_backups[0].id : "Backups not enabled"
 }
+
+output "web_terminal_url" {
+  description = "Web terminal URL (HTTP)"
+  value       = "http://${aws_instance.goldenshell.public_ip}:7681"
+}
+
+output "web_terminal_password_command" {
+  description = "Command to retrieve web terminal password"
+  value       = "aws ssm get-parameter --name /goldenshell/ttyd-password --with-decryption --query Parameter.Value --output text --region ${var.aws_region}"
+}

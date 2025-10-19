@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -234,6 +238,28 @@ resource "aws_ssm_parameter" "tailscale_auth_key" {
   }
 }
 
+# Generate random password for web terminal if not provided
+resource "random_password" "ttyd_password" {
+  count   = var.ttyd_password == "" ? 1 : 0
+  length  = 20
+  special = true
+  override_special = "!@#$%^&*()-_=+[]{}:?"
+}
+
+# SSM Parameter for web terminal password (secure storage)
+resource "aws_ssm_parameter" "ttyd_password" {
+  name        = "/goldenshell/ttyd-password"
+  description = "Web terminal (ttyd) password for GoldenShell instances"
+  type        = "SecureString"
+  value       = var.ttyd_password != "" ? var.ttyd_password : random_password.ttyd_password[0].result
+
+  tags = {
+    Name      = "goldenshell-ttyd-password"
+    Project   = "GoldenShell"
+    ManagedBy = "Terraform"
+  }
+}
+
 # EC2 Instance
 resource "aws_instance" "goldenshell" {
   ami                    = data.aws_ami.ubuntu.id
@@ -437,7 +463,7 @@ resource "aws_budgets_budget" "goldenshell_monthly" {
   limit_amount      = var.monthly_budget_limit
   limit_unit        = "USD"
   time_unit         = "MONTHLY"
-  time_period_start = "2025-10-01_00:00"
+  time_period_start = formatdate("YYYY-MM-01_00:00", timestamp())
 
   cost_filter {
     name = "TagKeyValue"
@@ -468,5 +494,9 @@ resource "aws_budgets_budget" "goldenshell_monthly" {
     threshold_type            = "PERCENTAGE"
     notification_type         = "FORECASTED"
     subscriber_email_addresses = var.budget_email_addresses
+  }
+
+  lifecycle {
+    ignore_changes = [time_period_start]
   }
 }

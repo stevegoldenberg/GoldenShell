@@ -154,12 +154,10 @@ def interactive_menu():
         except Exception as e:
             click.echo(click.style(f'\nError: {str(e)}', fg='red'))
 
-        # Ask if user wants to continue
+        # Pause before returning to menu
         click.echo()
         click.echo(click.style('-' * 53, fg='cyan'))
-        if not click.confirm(click.style('\nPerform another action?', fg='yellow'), default=True):
-            click.echo(click.style('\nGoodbye!', fg='green'))
-            break
+        click.pause(info=click.style('\nPress any key to return to menu...', fg='yellow'))
 
 
 @click.group(invoke_without_command=True)
